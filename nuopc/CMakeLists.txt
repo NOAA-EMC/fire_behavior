@@ -1,29 +1,29 @@
 # add ESMF targets
-if (NOT TARGET ESMF)
+if (NOT TARGET ESMF::ESMF)
   find_package(ESMF MODULE REQUIRED)
   if (NOT ESMF_FOUND)
     message(FATAL_ERROR "ESMF library not found. Please set environment variable ESMFMKFILE.")
   endif (NOT ESMF_FOUND)
-endif (NOT TARGET ESMF)
+endif (NOT TARGET ESMF::ESMF)
 
 # configure fire behavior nuopc cap library
 add_library(fire_behavior_nuopc fire_behavior_nuopc.F90)
 add_dependencies(fire_behavior_nuopc firelib)
 target_link_libraries(fire_behavior_nuopc PUBLIC firelib)
-target_link_libraries(fire_behavior_nuopc PUBLIC ESMF)
+target_link_libraries(fire_behavior_nuopc PUBLIC ESMF::ESMF)
 target_include_directories(fire_behavior_nuopc INTERFACE $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>
                                                          $<INSTALL_INTERFACE:mod>)
 # configure wrfdata nuopc cap library
 add_library(fire_behavior_wrfnuopc wrf_nuopc.F90)
 add_dependencies(fire_behavior_wrfnuopc firelib)
 target_link_libraries(fire_behavior_wrfnuopc PUBLIC firelib)
-target_link_libraries(fire_behavior_wrfnuopc PUBLIC ESMF)
+target_link_libraries(fire_behavior_wrfnuopc PUBLIC ESMF::ESMF)
 
 # configure fire behavior esmf executable
 add_executable(fire_behavior_esmf esmApp.F90 esm.F90)
 add_dependencies(fire_behavior_esmf firelib fire_behavior_nuopc fire_behavior_wrfnuopc)
 target_link_libraries(fire_behavior_esmf PUBLIC firelib fire_behavior_nuopc fire_behavior_wrfnuopc)
-target_link_libraries(fire_behavior_esmf PUBLIC ESMF)
+target_link_libraries(fire_behavior_esmf PUBLIC ESMF::ESMF)
 
 # configure fire behavior esmx executable
 if (ESMX)
