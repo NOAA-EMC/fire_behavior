@@ -70,6 +70,8 @@
       end select
       call grid%ros_param%Init (grid%ifms, grid%ifme, grid%jfms, grid%jfme)
 
+      !$OMP PARALLEL DO   &
+      !$OMP PRIVATE (ij)
       do ij = 1, grid%num_tiles
         call Extrapol_var_at_bdys (grid%ifms, grid%ifme, grid%jfms, grid%jfme, grid%ifds, grid%ifde, &
             grid%jfds, grid%jfde, grid%i_start(ij), grid%i_end(ij), grid%j_start(ij), grid%j_end(ij), &
@@ -82,6 +84,7 @@
         call grid%ros_param%Set_params (grid%ifms, grid%ifme, grid%jfms, grid%jfme, grid%i_start(ij), grid%i_end(ij), &
             grid%j_start(ij), grid%j_end(ij), grid%fuels, grid%nfuel_cat, grid%fmc_g)
       end do
+      !$OMP END PARALLEL DO
 
     end subroutine Init_fire_components
 
@@ -94,7 +97,10 @@
 
       integer, parameter :: PRINT_LEVEL = 1
       integer :: ij
+      logical, parameter :: DEBUG_LOCAL = .false.
 
+
+      if (DEBUG_LOCAL) call Print_message ('Entering Advance_fire_components...') 
 
       if (config_flags%fmoist_run) call grid%fmc_param%Advance_fmc_model (config_flags%fmoist_freq, config_flags%fmoist_dt, &
           grid%itimestep, grid%dt, grid%ifms, grid%ifme, grid%jfms, grid%jfme, &
@@ -103,12 +109,11 @@
           grid%fire_rain_old, grid%fire_t2_old, grid%fire_q2_old, grid%fire_psfc_old, grid%fire_rh_fire, config_flags%fuelmc_g, &
           grid%fmc_g, grid%nfuel_cat, grid%fuels, grid%ros_param)
 
-      do ij = 1, grid%num_tiles
-        call Advance_fire_model (config_flags, grid, &
-            grid%i_start(ij), grid%i_end(ij), grid%j_start(ij), grid%j_end(ij))
-      end do
+      call Advance_fire_model (config_flags, grid)
 
       if (config_flags%fire_print_msg >= PRINT_LEVEL) call Print_summary (config_flags, grid)
+
+      if (DEBUG_LOCAL) call Print_message ('Leaving Advance_fire_components...') 
 
     end subroutine Advance_fire_components
 
