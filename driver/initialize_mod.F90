@@ -3,9 +3,12 @@
     use state_mod, only : state_fire_t
     use namelist_mod, only : namelist_t
     use geogrid_mod, only : geogrid_t
-    use wrf_mod, only : wrf_t
+    use wrfdata_mod, only : wrfdata_t
     use fire_driver_mod, only : Init_fire_components
-    use stderrout_mod, only: Print_message
+    use stderrout_mod, only: Print_message, Stop_simulation
+#ifdef DM_PARALLEL
+    use mpi_mod, only : Convert_mpi_comm_to_f08
+#endif
 
     private
 
@@ -17,7 +20,7 @@
 
       implicit none
 
-      type (wrf_t), intent (in out) :: atm_state
+      type (wrfdata_t), intent (in out) :: atm_state
       type (namelist_t), intent (in) :: config_flags
 
       logical, parameter :: DEBUG_LOCAL = .false.
@@ -25,7 +28,7 @@
 
       if (DEBUG_LOCAL) call Print_message ('  Entering subroutine Init_atm_state')
 
-      atm_state = wrf_t ('wrf.nc', config_flags)
+      atm_state = wrfdata_t ('wrf.nc', config_flags)
 
       if (DEBUG_LOCAL) call Print_message ('  Leaving subroutine Init_atm_state')
 
@@ -33,15 +36,24 @@
 
     subroutine Init_fire_state (grid, config_flags, wrf)
 
+#ifdef DM_PARALLEL
+      use mpi_f08
+#endif
+
       implicit none
 
       type (state_fire_t), intent (in out) :: grid
       type (namelist_t), intent (in) :: config_flags
-      type (wrf_t), intent (in out), optional :: wrf
+      type (wrfdata_t), intent (in out), optional :: wrf
 
       type (geogrid_t) :: geogrid
       logical, parameter :: DEBUG_LOCAL = .false.
       integer :: i, j, unit_out, unit_out2
+
+      integer :: rank, ierr
+#ifdef DM_PARALLEL
+      type(MPI_Comm) :: cfbm_comm_f08
+#endif
 
 
       if (DEBUG_LOCAL) call Print_message ('  Entering subroutine Init_state')
@@ -50,15 +62,46 @@
       if (config_flags%ideal_opt == 0) then
           ! Real world
         if (DEBUG_LOCAL) call Print_message ('    Reading geogrid file')
-        geogrid = geogrid_t (file_name = 'geo_em.d01.nc')
+#ifdef DM_PARALLEL
+        if (grid%is_cfbm_comm_set) then
+          call Convert_mpi_comm_to_f08 (grid%cfbm_comm, cfbm_comm_f08)
+          call Mpi_comm_rank (cfbm_comm_f08, rank, ierr)
+        else
+          call Stop_simulation ('The MPI communicator cfbm_comm has not been set')
+        end if
+#else
+        rank = 0
+#endif
+
+        if (rank == 0) geogrid = geogrid_t (file_name = 'geo_em.d01.nc')
+
+#ifdef DM_PARALLEL
+        call MPI_Bcast (geogrid%cen_lon, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%cen_lat, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%dx, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%dy, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%true_lat_1, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%true_lat_2, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast (geogrid%stand_lon, 1, MPI_REAL, 0, cfbm_comm_f08, ierr)
+
+        call MPI_Bcast(geogrid%map_proj, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%sr_x, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%sr_y, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+
+        call MPI_Bcast(geogrid%ifds, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%ifde, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%jfds, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%jfde, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+
+        call MPI_Bcast(geogrid%ids, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%ide, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%jds, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+        call MPI_Bcast(geogrid%jde, 1, MPI_INTEGER, 0, cfbm_comm_f08, ierr)
+#endif
 
         if (DEBUG_LOCAL) call Print_message ('    Initializing fire state')
         call grid%Initialization (config_flags, geogrid)
 
-        if (present (wrf)) then
-          if (DEBUG_LOCAL) call Print_message ('    Initializing atmospheric state')
-          call grid%Handle_wrfdata_update (wrf, config_flags)
-        end if
       else
           ! Ideal
         if (DEBUG_LOCAL) call Print_message ('    Initializing fire state')
@@ -66,6 +109,11 @@
       end if
 
       call Init_fire_components (grid, config_flags)
+
+      if (present (wrf)) then
+        if (DEBUG_LOCAL) call Print_message ('    Initializing atmospheric state')
+        call grid%Handle_wrfdata_update (wrf, config_flags)
+      end if
 
       if (DEBUG_LOCAL) then
           ! print lat/lons
